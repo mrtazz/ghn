@@ -1,0 +1,13 @@
+[package]
+name = "ghn"
+version = "0.1.0"
+edition = "2024"
+description = "mutt inspired interface for GitHub notifications"
+
+[dependencies]
+chrono = "0.4.44"
+color-eyre = "0.6.5"
+crossterm = "0.29.0"
+octocrab = "0.49.6"
+ratatui = "0.30.0"
+tokio = { version = "1.50.0", features = ["macros", "rt-multi-thread"] }
