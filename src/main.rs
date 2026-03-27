@@ -15,8 +15,8 @@ use ratatui::style::palette::tailwind::{BLUE, GREEN, SLATE};
 use ratatui::style::{Color, Modifier, Style, Stylize};
 use ratatui::text::Line;
 use ratatui::widgets::{
-    Block, Borders, HighlightSpacing, List, ListItem, ListState, Padding, Paragraph,
-    StatefulWidget, Widget, Wrap,
+    Block, Borders, HighlightSpacing, Padding, Paragraph, Row, StatefulWidget, Table, TableState,
+    Widget, Wrap,
 };
 use ratatui::{symbols, DefaultTerminal};
 use tokio;
@@ -46,7 +46,7 @@ struct App {
 
 struct NotificationList {
     items: Vec<Notification>,
-    state: ListState,
+    state: TableState,
 }
 
 #[derive(Debug)]
@@ -70,7 +70,8 @@ enum Status {
 
 #[tokio::main]
 async fn get_github_notifications() -> octocrab::Result<Vec<Notification>> {
-    let token = std::env::var("GITHUB_TOKEN").expect("GITHUB_TOKEN env variable is required");
+    let token =
+        std::env::var("GHN_GITHUB_TOKEN").expect("GHN_GITHUB_TOKEN env variable is required");
 
     let octocrab = Octocrab::builder().personal_token(token).build().unwrap();
 
@@ -82,6 +83,7 @@ async fn get_github_notifications() -> octocrab::Result<Vec<Notification>> {
         .all(true)
         .send()
         .await?;
+
     for n in gh_notifications {
         notifications.push(Notification {
             title: n.subject.title,
@@ -91,9 +93,10 @@ async fn get_github_notifications() -> octocrab::Result<Vec<Notification>> {
             repo: n.repository.full_name.unwrap_or(String::from("no-name")),
             updated_at: n.updated_at,
             status: Status::Unread,
-            url: String::from(n.url),
+            url: String::from(n.subject.url.unwrap()),
         });
     }
+    notifications.sort_by_key(|x| x.updated_at);
     Ok(notifications)
 }
 
@@ -103,7 +106,7 @@ impl Default for App {
             should_exit: false,
             notifications_list: NotificationList {
                 items: get_github_notifications().unwrap(),
-                state: ListState::default(),
+                state: TableState::default(),
             },
         }
     }
@@ -138,9 +141,9 @@ impl App {
             KeyCode::Char('k') | KeyCode::Up => self.select_previous(),
             KeyCode::Char('g') | KeyCode::Home => self.select_first(),
             KeyCode::Char('G') | KeyCode::End => self.select_last(),
-            KeyCode::Char('l') | KeyCode::Right | KeyCode::Enter => {
-                self.toggle_status();
-            }
+            KeyCode::Char('N') => self.change_status(Status::Unread),
+            KeyCode::Char('d') => self.change_status(Status::Done),
+            KeyCode::Char('r') => self.change_status(Status::Read),
             _ => {}
         }
     }
@@ -164,15 +167,9 @@ impl App {
         self.notifications_list.state.select_last();
     }
 
-    /// Changes the status of the selected list item
-    fn toggle_status(&mut self) {
+    fn change_status(&mut self, status: Status) {
         if let Some(i) = self.notifications_list.state.selected() {
-            self.notifications_list.items[i].status = match self.notifications_list.items[i].status
-            {
-                Status::Done => Status::Unread,
-                Status::Read => Status::Unread,
-                Status::Unread => Status::Done,
-            }
+            self.notifications_list.items[i].status = status;
         }
     }
 }
@@ -199,48 +196,56 @@ impl Widget for &mut App {
 /// Rendering logic for the app
 impl App {
     fn render_header(area: Rect, buf: &mut Buffer) {
-        Paragraph::new("Ratatui Todo List Example")
+        Paragraph::new("ghn - GitHub notifications")
             .bold()
             .centered()
             .render(area, buf);
     }
 
     fn render_footer(area: Rect, buf: &mut Buffer) {
-        Paragraph::new("Use ↓↑ to move, ← to unselect, → to change status, g/G to go top/bottom.")
+        Paragraph::new("Use j/k to move, g/G to go top/bottom, d to mark done, N to mark unread, r to mark as read")
             .centered()
             .render(area, buf);
     }
 
     fn render_list(&mut self, area: Rect, buf: &mut Buffer) {
         let block = Block::new()
-            .title(Line::raw("TODO List").centered())
+            .title(Line::raw("Notifications List").centered())
             .borders(Borders::TOP)
             .border_set(symbols::border::EMPTY)
             .border_style(TODO_HEADER_STYLE)
             .bg(NORMAL_ROW_BG);
 
         // Iterate through all elements in the `items` and stylize them.
-        let items: Vec<ListItem> = self
+        let items: Vec<Row> = self
             .notifications_list
             .items
             .iter()
             .enumerate()
-            .map(|(i, todo_item)| {
+            .map(|(i, notification)| {
                 let color = alternate_colors(i);
-                ListItem::from(todo_item).bg(color)
+                Row::from(notification).bg(color)
             })
             .collect();
 
-        // Create a List from all list items and highlight the currently selected one
-        let list = List::new(items)
+        let widths = [
+            Constraint::Length(2),
+            Constraint::Length(15),
+            Constraint::Length(20),
+            Constraint::Length(20),
+            Constraint::Length(100),
+            Constraint::Length(20),
+        ];
+
+        let table = Table::new(items, widths)
             .block(block)
-            .highlight_style(SELECTED_STYLE)
-            .highlight_symbol(">")
+            .row_highlight_style(Style::new().reversed())
+            .highlight_symbol(">>")
             .highlight_spacing(HighlightSpacing::Always);
 
         // We need to disambiguate this trait method as both `Widget` and `StatefulWidget` share the
         // same method name `render`.
-        StatefulWidget::render(list, area, buf, &mut self.notifications_list.state);
+        StatefulWidget::render(table, area, buf, &mut self.notifications_list.state);
     }
 
     fn render_selected_item(&self, area: Rect, buf: &mut Buffer) {
@@ -257,7 +262,7 @@ impl App {
 
         // We show the list item's info under the list in this paragraph
         let block = Block::new()
-            .title(Line::raw("TODO Info").centered())
+            .title(Line::raw("Notification Info").centered())
             .borders(Borders::TOP)
             .border_set(symbols::border::EMPTY)
             .border_style(TODO_HEADER_STYLE)
@@ -281,13 +286,21 @@ const fn alternate_colors(i: usize) -> Color {
     }
 }
 
-impl From<&Notification> for ListItem<'_> {
+impl<'a> From<&Notification> for Row<'a> {
     fn from(value: &Notification) -> Self {
-        let line = match value.status {
-            Status::Unread => Line::styled(format!(" ☐ {}", value.title), TEXT_FG_COLOR),
-            Status::Read => Line::styled(format!(" ☐ {}", value.title), TEXT_FG_COLOR),
-            Status::Done => Line::styled(format!(" ✓ {}", value.title), COMPLETED_TEXT_FG_COLOR),
+        let status_marker = match value.status {
+            Status::Unread => "N",
+            Status::Read => "R",
+            Status::Done => "D",
         };
-        ListItem::new(line)
+
+        Row::new(vec![
+            format!("{}", status_marker),
+            format!("{}", value.github_type),
+            format!("{}", value.reason),
+            format!("{}", value.repo),
+            format!("{}", value.title),
+            format!("{}", value.updated_at.format("%Y-%m-%d %H:%M:%S")),
+        ])
     }
 }
