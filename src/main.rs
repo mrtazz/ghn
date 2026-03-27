@@ -26,7 +26,7 @@ const NORMAL_ROW_BG: Color = SLATE.c950;
 const ALT_ROW_BG_COLOR: Color = SLATE.c900;
 const SELECTED_STYLE: Style = Style::new().bg(SLATE.c800).add_modifier(Modifier::BOLD);
 const TEXT_FG_COLOR: Color = SLATE.c200;
-const COMPLETED_TEXT_FG_COLOR: Color = GREEN.c500;
+const DONE_TEXT_FG_COLOR: Color = GREEN.c500;
 
 fn main() -> Result<()> {
     color_eyre::install()?;
@@ -230,16 +230,16 @@ impl App {
 
         let widths = [
             Constraint::Length(2),
+            Constraint::Length(20),
             Constraint::Length(15),
             Constraint::Length(20),
             Constraint::Length(20),
             Constraint::Length(100),
-            Constraint::Length(20),
         ];
 
         let table = Table::new(items, widths)
             .block(block)
-            .row_highlight_style(Style::new().reversed())
+            .row_highlight_style(SELECTED_STYLE)
             .highlight_symbol(">>")
             .highlight_spacing(HighlightSpacing::Always);
 
@@ -278,14 +278,6 @@ impl App {
     }
 }
 
-const fn alternate_colors(i: usize) -> Color {
-    if i.is_multiple_of(2) {
-        NORMAL_ROW_BG
-    } else {
-        ALT_ROW_BG_COLOR
-    }
-}
-
 impl<'a> From<&Notification> for Row<'a> {
     fn from(value: &Notification) -> Self {
         let status_marker = match value.status {
@@ -296,11 +288,20 @@ impl<'a> From<&Notification> for Row<'a> {
 
         Row::new(vec![
             format!("{}", status_marker),
+            format!("{}", value.updated_at.format("%Y-%m-%d %H:%M:%S")),
             format!("{}", value.github_type),
             format!("{}", value.reason),
             format!("{}", value.repo),
             format!("{}", value.title),
-            format!("{}", value.updated_at.format("%Y-%m-%d %H:%M:%S")),
         ])
+        .style(TEXT_FG_COLOR)
+    }
+}
+
+const fn alternate_colors(i: usize) -> Color {
+    if i.is_multiple_of(2) {
+        NORMAL_ROW_BG
+    } else {
+        ALT_ROW_BG_COLOR
     }
 }
