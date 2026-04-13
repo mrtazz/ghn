@@ -23,6 +23,7 @@ const DONE_TEXT_FG_COLOR: Color = GREEN.c500;
 
 pub struct App {
     should_exit: bool,
+    should_show_info: bool,
     notifications_list: NotificationList,
 }
 
@@ -35,6 +36,7 @@ impl Default for App {
     fn default() -> Self {
         Self {
             should_exit: false,
+            should_show_info: false,
             notifications_list: NotificationList {
                 items: github::get_github_notifications().unwrap(),
                 state: TableState::default(),
@@ -42,16 +44,6 @@ impl Default for App {
         }
     }
 }
-
-//impl Notification {
-//    fn new(status: Status, title: &str, body: &str) -> Self {
-//        Self {
-//            status,
-//            title: title.to_string(),
-//            body: body.to_string(),
-//        }
-//    }
-//}
 
 impl App {
     pub fn run(mut self, terminal: &mut DefaultTerminal) -> Result<()> {
@@ -66,7 +58,7 @@ impl App {
 
     fn handle_key(&mut self, key: KeyEvent) {
         match key.code {
-            KeyCode::Char('q') | KeyCode::Esc => self.should_exit = true,
+            KeyCode::Char('q') => self.close_content_or_app(),
             KeyCode::Char('h') | KeyCode::Left => self.select_none(),
             KeyCode::Char('j') | KeyCode::Down => self.select_next(),
             KeyCode::Char('k') | KeyCode::Up => self.select_previous(),
@@ -75,8 +67,21 @@ impl App {
             KeyCode::Char('N') => self.change_status(Status::Unread),
             KeyCode::Char('d') => self.change_status(Status::Done),
             KeyCode::Char('r') => self.change_status(Status::Read),
+            KeyCode::Enter => self.show_info(),
             _ => {}
         }
+    }
+
+    fn close_content_or_app(&mut self) {
+        if self.should_show_info {
+            self.should_show_info = false
+        } else {
+            self.should_exit = true
+        }
+    }
+
+    fn show_info(&mut self) {
+        self.should_show_info = true
     }
 
     const fn select_none(&mut self) {
@@ -113,12 +118,18 @@ impl Widget for &mut App {
             Constraint::Length(1),
         ]);
         let [header_area, content_area, footer_area] = area.layout(&main_layout);
+        App::render_header(header_area, buf);
+        App::render_footer(footer_area, buf);
+
+        if !self.should_show_info {
+            let content_layout = Layout::vertical([Constraint::Fill(1)]);
+            let [list_area] = content_area.layout(&content_layout);
+            self.render_list(list_area, buf);
+            return;
+        }
 
         let content_layout = Layout::vertical([Constraint::Fill(1), Constraint::Fill(1)]);
         let [list_area, item_area] = content_area.layout(&content_layout);
-
-        App::render_header(header_area, buf);
-        App::render_footer(footer_area, buf);
         self.render_list(list_area, buf);
         self.render_selected_item(item_area, buf);
     }
@@ -180,6 +191,9 @@ impl App {
     }
 
     fn render_selected_item(&self, area: Rect, buf: &mut Buffer) {
+        if !self.should_show_info {
+            return;
+        }
         // We get the info depending on the item's state.
         let info = if let Some(i) = self.notifications_list.state.selected() {
             format!("URL: {}", self.notifications_list.items[i].url)
