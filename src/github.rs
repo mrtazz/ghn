@@ -4,19 +4,20 @@ use tokio;
 use crate::notifications::{Notification, Status};
 
 #[tokio::main]
-pub async fn get_github_notifications() -> octocrab::Result<Vec<Notification>> {
+pub async fn get_notifications() -> octocrab::Result<Vec<Notification>> {
     let token =
         std::env::var("GHN_GITHUB_TOKEN").expect("GHN_GITHUB_TOKEN env variable is required");
-
-    let octocrab = Octocrab::builder().personal_token(token).build().unwrap();
-
+    let octocrab = Octocrab::builder()
+        .personal_token(token)
+        .build()
+        .expect("octocrab client");
     let mut notifications: Vec<Notification> = Vec::new();
     let mut current_page = octocrab
         .activity()
         .notifications()
         .list()
         .per_page(100)
-        .all(true)
+        .all(false)
         .send()
         .await?;
 
@@ -29,6 +30,7 @@ pub async fn get_github_notifications() -> octocrab::Result<Vec<Notification>> {
 
     for n in gh_notifications {
         notifications.push(Notification {
+            id: *n.id,
             title: n.subject.title,
             body: String::from(""),
             github_type: n.subject.r#type,
@@ -41,4 +43,50 @@ pub async fn get_github_notifications() -> octocrab::Result<Vec<Notification>> {
     }
     notifications.sort_by_key(|x| x.updated_at);
     Ok(notifications)
+}
+
+pub fn update_state(notifications: &Vec<Notification>) -> Result<(), String> {
+    return notifications.iter().map(update_thread_state).collect();
+}
+
+#[tokio::main]
+async fn update_thread_state(n: &Notification) -> Result<(), String> {
+    match n.status {
+        Status::Read => {
+            let token = std::env::var("GHN_GITHUB_TOKEN")
+                .expect("GHN_GITHUB_TOKEN env variable is required");
+            let octocrab = Octocrab::builder()
+                .personal_token(token)
+                .build()
+                .expect("octocrab client");
+            match octocrab
+                .activity()
+                .notifications()
+                .mark_as_read(octocrab::models::NotificationId(n.id))
+                .await
+            {
+                Err(e) => Err(format!("Failed to mark thread '{}, as read: {}", &n.url, e)),
+                Ok(_) => Ok(()),
+            }
+        }
+        Status::Done => {
+            let token = std::env::var("GHN_GITHUB_TOKEN")
+                .expect("GHN_GITHUB_TOKEN env variable is required");
+            let octocrab = Octocrab::builder()
+                .personal_token(token)
+                .build()
+                .expect("octocrab client");
+
+            let url = format!("https://api.github.com/notifications/threads/{}", n.id);
+            match octocrab._delete(url, None::<&()>).await {
+                Err(e) => Err(format!(
+                    "Failed to mark thread '{}, as done: {}",
+                    String::from(&n.url),
+                    e
+                )),
+                Ok(_) => Ok(()),
+            }
+        }
+        Status::Unread => Ok(()),
+    }
 }

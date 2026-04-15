@@ -9,6 +9,7 @@ pub enum Status {
 
 #[derive(Debug)]
 pub struct Notification {
+    pub id: u64,
     pub title: String,
     pub body: String,
     pub repo: String,

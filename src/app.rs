@@ -2,7 +2,7 @@ use color_eyre::Result;
 use crossterm::event::{self, KeyCode, KeyEvent};
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::palette::tailwind::{BLUE, GREEN, SLATE};
+use ratatui::style::palette::tailwind::{BLUE, GREEN, RED, SLATE};
 use ratatui::style::{Color, Modifier, Style, Stylize};
 use ratatui::text::Line;
 use ratatui::widgets::{
@@ -19,11 +19,13 @@ const NORMAL_ROW_BG: Color = SLATE.c950;
 const ALT_ROW_BG_COLOR: Color = SLATE.c900;
 const SELECTED_STYLE: Style = Style::new().bg(SLATE.c800).add_modifier(Modifier::BOLD);
 const TEXT_FG_COLOR: Color = SLATE.c200;
-const DONE_TEXT_FG_COLOR: Color = GREEN.c500;
+const DONE_TEXT_BG_COLOR: Color = RED.c800;
 
 pub struct App {
     should_exit: bool,
     should_show_info: bool,
+    should_show_message: bool,
+    message: String,
     notifications_list: NotificationList,
 }
 
@@ -34,11 +36,26 @@ struct NotificationList {
 
 impl Default for App {
     fn default() -> Self {
+        let mut items: Vec<Notification> = vec![];
+        let mut should_show_error = false;
+        let mut error_message = String::from("");
+
+        match github::get_notifications() {
+            Err(e) => {
+                should_show_error = true;
+                error_message = format!("Failed to get initial notifications: {}", e);
+            }
+            Ok(notifications) => {
+                items = notifications;
+            }
+        }
         Self {
             should_exit: false,
             should_show_info: false,
+            should_show_message: should_show_error,
+            message: error_message,
             notifications_list: NotificationList {
-                items: github::get_github_notifications().unwrap(),
+                items: items,
                 state: TableState::default(),
             },
         }
@@ -56,8 +73,35 @@ impl App {
         Ok(())
     }
 
+    fn show_message(&mut self, msg: String) {
+        self.should_show_message = true;
+        self.message = msg;
+    }
+
+    fn sync_state_to_github(&mut self) {
+        match github::update_state(&self.notifications_list.items) {
+            Err(e) => {
+                self.show_message(format!("Failed to sync notificatons state: {}", e));
+            }
+            Ok(_) => {}
+        }
+        self.show_message(String::from(
+            "Done updating notificatons state, re-fetching...",
+        ));
+        match github::get_notifications() {
+            Err(e) => {
+                self.show_message(format!("Failed to fetch updated notificatons: {}", e));
+            }
+            Ok(notifications) => {
+                self.notifications_list.items = notifications;
+            }
+        }
+        self.should_show_message = false;
+    }
+
     fn handle_key(&mut self, key: KeyEvent) {
         match key.code {
+            KeyCode::Char('$') => self.sync_state_to_github(),
             KeyCode::Char('q') => self.close_content_or_app(),
             KeyCode::Char('h') | KeyCode::Left => self.select_none(),
             KeyCode::Char('j') | KeyCode::Down => self.select_next(),
@@ -65,7 +109,10 @@ impl App {
             KeyCode::Char('g') | KeyCode::Home => self.select_first(),
             KeyCode::Char('G') | KeyCode::End => self.select_last(),
             KeyCode::Char('N') => self.change_status(Status::Unread),
-            KeyCode::Char('d') => self.change_status(Status::Done),
+            KeyCode::Char('d') => {
+                self.change_status(Status::Done);
+                self.select_next();
+            }
             KeyCode::Char('r') => self.change_status(Status::Read),
             KeyCode::Enter => self.show_info(),
             _ => {}
@@ -73,6 +120,10 @@ impl App {
     }
 
     fn close_content_or_app(&mut self) {
+        if self.should_show_message {
+            self.should_show_message = false;
+            return;
+        }
         if self.should_show_info {
             self.should_show_info = false
         } else {
@@ -119,7 +170,7 @@ impl Widget for &mut App {
         ]);
         let [header_area, content_area, footer_area] = area.layout(&main_layout);
         App::render_header(header_area, buf);
-        App::render_footer(footer_area, buf);
+        self.render_footer(footer_area, buf);
 
         if !self.should_show_info {
             let content_layout = Layout::vertical([Constraint::Fill(1)]);
@@ -144,15 +195,21 @@ impl App {
             .render(area, buf);
     }
 
-    fn render_footer(area: Rect, buf: &mut Buffer) {
-        Paragraph::new("Use j/k to move, g/G to go top/bottom, d to mark done, N to mark unread, r to mark as read")
-            .centered()
-            .render(area, buf);
+    fn render_footer(&self, area: Rect, buf: &mut Buffer) {
+        let text = "Use j/k to move, g/G to go top/bottom, d to mark done, N to mark unread, r to mark as read, $ to sync state";
+        if self.should_show_message {
+            Paragraph::new(self.message.to_string())
+                .centered()
+                .render(area, buf);
+        } else {
+            Paragraph::new(text).centered().render(area, buf);
+        }
     }
 
     fn render_list(&mut self, area: Rect, buf: &mut Buffer) {
+        let count = self.notifications_list.items.len();
         let block = Block::new()
-            .title(Line::raw("Notifications List").centered())
+            .title(Line::raw(format!("Notifications ({})", count)).centered())
             .borders(Borders::TOP)
             .border_set(symbols::border::EMPTY)
             .border_style(TODO_HEADER_STYLE)
@@ -165,7 +222,7 @@ impl App {
             .iter()
             .enumerate()
             .map(|(i, notification)| {
-                let color = alternate_colors(i);
+                let color = alternate_colors(i, notification.status);
                 Row::from(notification).bg(color)
             })
             .collect();
@@ -239,10 +296,15 @@ impl<'a> From<&Notification> for Row<'a> {
     }
 }
 
-const fn alternate_colors(i: usize) -> Color {
-    if i.is_multiple_of(2) {
-        NORMAL_ROW_BG
-    } else {
-        ALT_ROW_BG_COLOR
+const fn alternate_colors(i: usize, s: Status) -> Color {
+    match s {
+        Status::Done => DONE_TEXT_BG_COLOR,
+        _ => {
+            if i.is_multiple_of(2) {
+                NORMAL_ROW_BG
+            } else {
+                ALT_ROW_BG_COLOR
+            }
+        }
     }
 }
