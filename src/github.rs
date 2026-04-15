@@ -38,11 +38,22 @@ pub async fn get_notifications() -> octocrab::Result<Vec<Notification>> {
             repo: n.repository.full_name.unwrap_or(String::from("no-name")),
             updated_at: n.updated_at,
             status: Status::Unread,
-            url: String::from(n.subject.url.unwrap()),
+            url: convert_to_html_url(String::from(n.subject.url.unwrap())).unwrap(),
         });
     }
     notifications.sort_by_key(|x| x.updated_at);
     Ok(notifications)
+}
+
+// converts something like https://api.github.com/repos/foo/bla/pulls/1234
+// into https://github.com/foo/bla/pull/1234
+fn convert_to_html_url(url: String) -> Result<String, String> {
+    let ret = url
+        .replace("/repos/", "/")
+        .replace("/pulls/", "/pull/")
+        .replace("api.github.com", "github.com");
+
+    return Ok(ret);
 }
 
 pub fn update_state(notifications: &Vec<Notification>) -> Result<(), String> {
