@@ -253,7 +253,15 @@ impl App {
         }
         // We get the info depending on the item's state.
         let info = if let Some(i) = self.notifications_list.state.selected() {
-            format!("URL: {}", self.notifications_list.items[i].url)
+            match github::hydrate_notification(&self.notifications_list.items[i]) {
+                Err(e) => format!(
+                    "URL: {}\nUnable to get notification details: {}",
+                    &self.notifications_list.items[i].url, e
+                ),
+                Ok(v) => {
+                    format!("URL: {}\nauthor: {}\nstate: {}", v.url, v.author, v.state)
+                }
+            }
         } else {
             "Nothing selected...".to_string()
         };
@@ -289,7 +297,7 @@ impl<'a> From<&Notification> for Row<'a> {
             format!("{}", value.updated_at.format("%Y-%m-%d %H:%M:%S")),
             format!("{}", value.github_type),
             format!("{}", value.reason),
-            format!("{}", value.repo),
+            format!("{}", value.repo.nwo),
             format!("{}", value.title),
         ])
         .style(TEXT_FG_COLOR)

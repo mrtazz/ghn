@@ -1,7 +1,8 @@
+use octocrab::models::IssueState;
 use octocrab::Octocrab;
 use tokio;
 
-use crate::notifications::{Notification, Status};
+use crate::notifications::{Notification, NotificationDetail, Repo, Status};
 
 #[tokio::main]
 pub async fn get_notifications() -> octocrab::Result<Vec<Notification>> {
@@ -32,10 +33,14 @@ pub async fn get_notifications() -> octocrab::Result<Vec<Notification>> {
         notifications.push(Notification {
             id: *n.id,
             title: n.subject.title,
-            body: String::from(""),
             github_type: n.subject.r#type,
             reason: n.reason,
-            repo: n.repository.full_name.unwrap_or(String::from("no-name")),
+            repo: Repo {
+                nwo: n.repository.full_name.unwrap_or(String::from("no-name")),
+                owner: n.repository.owner.unwrap().login,
+                name: n.repository.name,
+            },
+            latest_comment_url: Some(String::from("")),
             updated_at: n.updated_at,
             status: Status::Unread,
             url: convert_to_html_url(String::from(n.subject.url.unwrap())).unwrap(),
@@ -54,6 +59,41 @@ fn convert_to_html_url(url: String) -> Result<String, String> {
         .replace("api.github.com", "github.com");
 
     return Ok(ret);
+}
+
+#[tokio::main]
+pub async fn hydrate_notification(n: &Notification) -> Result<NotificationDetail, String> {
+    let token =
+        std::env::var("GHN_GITHUB_TOKEN").expect("GHN_GITHUB_TOKEN env variable is required");
+    let octocrab = Octocrab::builder()
+        .personal_token(token)
+        .build()
+        .expect("octocrab client");
+    let mut detail = NotificationDetail::default();
+    detail.url = String::from(&n.url);
+    if n.github_type == String::from("Issue") {
+        let issue_number = &n.url.split("/").last().unwrap().parse::<u64>().unwrap();
+        match octocrab
+            .issues(&n.repo.owner, &n.repo.name)
+            .get(*issue_number)
+            .await
+        {
+            Err(e) => {
+                return Err(format!("unable to retrieve issue: {}", e));
+            }
+            Ok(v) => {
+                detail.url = String::from(v.html_url);
+                detail.author = v.user.login;
+                match v.state {
+                    IssueState::Open => detail.state = String::from("open"),
+                    IssueState::Closed => detail.state = String::from("closed"),
+                    _ => detail.state = String::from("n/a"),
+                }
+            }
+        }
+    }
+
+    Ok(detail)
 }
 
 pub fn update_state(notifications: &Vec<Notification>) -> Result<(), String> {
