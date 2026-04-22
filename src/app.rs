@@ -127,6 +127,7 @@ impl App {
         if self.should_show_info {
             self.should_show_info = false
         } else {
+            self.sync_state_to_github();
             self.should_exit = true
         }
     }
@@ -230,6 +231,7 @@ impl App {
         let widths = [
             Constraint::Length(2),
             Constraint::Length(20),
+            Constraint::Length(10),
             Constraint::Length(15),
             Constraint::Length(20),
             Constraint::Length(20),
@@ -253,7 +255,7 @@ impl App {
         }
         // We get the info depending on the item's state.
         let info = if let Some(i) = self.notifications_list.state.selected() {
-            match github::hydrate_notification(&self.notifications_list.items[i]) {
+            match &self.notifications_list.items[i].details {
                 Err(e) => format!(
                     "URL: {}\nUnable to get notification details: {}",
                     &self.notifications_list.items[i].url, e
@@ -295,6 +297,10 @@ impl<'a> From<&Notification> for Row<'a> {
         Row::new(vec![
             format!("{}", status_marker),
             format!("{}", value.updated_at.format("%Y-%m-%d %H:%M:%S")),
+            match &value.details {
+                Err(_) => format!("n/a"),
+                Ok(v) => format!("{}", v.state),
+            },
             format!("{}", value.github_type),
             format!("{}", value.reason),
             format!("{}", value.repo.nwo),

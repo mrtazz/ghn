@@ -30,7 +30,7 @@ pub async fn get_notifications() -> octocrab::Result<Vec<Notification>> {
     }
 
     for n in gh_notifications {
-        notifications.push(Notification {
+        let mut new_n = Notification {
             id: *n.id,
             title: n.subject.title,
             github_type: n.subject.r#type,
@@ -44,7 +44,10 @@ pub async fn get_notifications() -> octocrab::Result<Vec<Notification>> {
             updated_at: n.updated_at,
             status: Status::Unread,
             url: convert_to_html_url(String::from(n.subject.url.unwrap())).unwrap(),
-        });
+            details: Err(String::from("Not yet retrieved")),
+        };
+        new_n.details = hydrate_notification(&new_n, &octocrab).await;
+        notifications.push(new_n);
     }
     notifications.sort_by_key(|x| x.updated_at);
     Ok(notifications)
@@ -61,25 +64,24 @@ fn convert_to_html_url(url: String) -> Result<String, String> {
     return Ok(ret);
 }
 
-#[tokio::main]
-pub async fn hydrate_notification(n: &Notification) -> Result<NotificationDetail, String> {
-    let token =
-        std::env::var("GHN_GITHUB_TOKEN").expect("GHN_GITHUB_TOKEN env variable is required");
-    let octocrab = Octocrab::builder()
-        .personal_token(token)
-        .build()
-        .expect("octocrab client");
+pub async fn hydrate_notification(
+    n: &Notification,
+    o: &Octocrab,
+) -> Result<NotificationDetail, String> {
     let mut detail = NotificationDetail::default();
     detail.url = String::from(&n.url);
     if n.github_type == String::from("Issue") {
         let issue_number = &n.url.split("/").last().unwrap().parse::<u64>().unwrap();
-        match octocrab
+        match o
             .issues(&n.repo.owner, &n.repo.name)
             .get(*issue_number)
             .await
         {
             Err(e) => {
-                return Err(format!("unable to retrieve issue: {}", e));
+                return Err(format!(
+                    "unable to retrieve issue {}/{}#{}: {e:#?}",
+                    &n.repo.owner, &n.repo.name, *issue_number
+                ));
             }
             Ok(v) => {
                 detail.url = String::from(v.html_url);
@@ -87,6 +89,26 @@ pub async fn hydrate_notification(n: &Notification) -> Result<NotificationDetail
                 match v.state {
                     IssueState::Open => detail.state = String::from("open"),
                     IssueState::Closed => detail.state = String::from("closed"),
+                    _ => detail.state = String::from("n/a"),
+                }
+            }
+        }
+    }
+    if n.github_type == String::from("PullRequest") {
+        let pr_number = &n.url.split("/").last().unwrap().parse::<u64>().unwrap();
+        match o.pulls(&n.repo.owner, &n.repo.name).get(*pr_number).await {
+            Err(e) => {
+                return Err(format!(
+                    "unable to retrieve PR {}/{}#{}: {e:#?}",
+                    &n.repo.owner, &n.repo.name, *pr_number
+                ));
+            }
+            Ok(v) => {
+                detail.url = String::from(v.html_url.unwrap());
+                detail.author = v.user.unwrap().login;
+                match v.state {
+                    Some(IssueState::Open) => detail.state = String::from("open"),
+                    Some(IssueState::Closed) => detail.state = String::from("closed"),
                     _ => detail.state = String::from("n/a"),
                 }
             }

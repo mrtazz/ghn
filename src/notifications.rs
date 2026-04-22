@@ -25,6 +25,7 @@ pub struct Notification {
     pub reason: String,
     pub status: Status,
     pub updated_at: chrono::DateTime<Utc>,
+    pub details: Result<NotificationDetail, String>,
 }
 
 #[derive(Debug, Default)]
