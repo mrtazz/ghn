@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use octocrab::models::IssueState;
 use octocrab::Octocrab;
 use tokio;
@@ -5,7 +7,9 @@ use tokio;
 use crate::notifications::{Notification, NotificationDetail, Repo, Status};
 
 #[tokio::main]
-pub async fn get_notifications() -> octocrab::Result<Vec<Notification>> {
+pub async fn get_notifications(
+    current: Option<&Vec<Notification>>,
+) -> octocrab::Result<Vec<Notification>> {
     let token =
         std::env::var("GHN_GITHUB_TOKEN").expect("GHN_GITHUB_TOKEN env variable is required");
     let octocrab = Octocrab::builder()
@@ -29,6 +33,11 @@ pub async fn get_notifications() -> octocrab::Result<Vec<Notification>> {
         current_page = new_page;
     }
 
+    let mut existing_notifications: HashMap<u64, Notification> = HashMap::new();
+    for n in current.unwrap_or(&vec![]) {
+        existing_notifications.insert(n.id, n.clone());
+    }
+
     for n in gh_notifications {
         let mut new_n = Notification {
             id: *n.id,
@@ -46,7 +55,18 @@ pub async fn get_notifications() -> octocrab::Result<Vec<Notification>> {
             url: convert_to_html_url(String::from(n.subject.url.unwrap())).unwrap(),
             details: Err(String::from("Not yet retrieved")),
         };
-        new_n.details = hydrate_notification(&new_n, &octocrab).await;
+        match existing_notifications.get(&new_n.id) {
+            None => {
+                new_n.details = hydrate_notification(&new_n, &octocrab).await;
+            }
+            Some(n) => {
+                if new_n.updated_at > n.updated_at {
+                    new_n.details = hydrate_notification(&new_n, &octocrab).await;
+                } else {
+                    new_n.details = n.details.clone();
+                }
+            }
+        }
         notifications.push(new_n);
     }
     notifications.sort_by_key(|x| x.updated_at);

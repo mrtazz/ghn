@@ -40,7 +40,7 @@ impl Default for App {
         let mut should_show_error = false;
         let mut error_message = String::from("");
 
-        match github::get_notifications() {
+        match github::get_notifications(None) {
             Err(e) => {
                 should_show_error = true;
                 error_message = format!("Failed to get initial notifications: {}", e);
@@ -88,7 +88,7 @@ impl App {
         self.show_message(String::from(
             "Done updating notificatons state, re-fetching...",
         ));
-        match github::get_notifications() {
+        match github::get_notifications(Some(&self.notifications_list.items)) {
             Err(e) => {
                 self.show_message(format!("Failed to fetch updated notificatons: {}", e));
             }

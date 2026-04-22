@@ -7,14 +7,14 @@ pub enum Status {
     Done,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Repo {
     pub owner: String,
     pub name: String,
     pub nwo: String,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Notification {
     pub id: u64,
     pub title: String,
@@ -28,7 +28,7 @@ pub struct Notification {
     pub details: Result<NotificationDetail, String>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct NotificationDetail {
     pub state: String,
     pub last_comment: String,
