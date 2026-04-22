@@ -261,7 +261,11 @@ impl App {
                     &self.notifications_list.items[i].url, e
                 ),
                 Ok(v) => {
-                    format!("URL: {}\nauthor: {}\nstate: {}", v.url, v.author, v.state)
+                    let comment = v.latest_comment.clone().unwrap_or_default();
+                    format!(
+                        "URL: {}\nauthor: {}\n\n{}:\n\n{}\n\n{}",
+                        v.url, v.author, comment.author, comment.body, comment.url,
+                    )
                 }
             }
         } else {

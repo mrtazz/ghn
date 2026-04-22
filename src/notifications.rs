@@ -29,9 +29,16 @@ pub struct Notification {
 }
 
 #[derive(Clone, Debug, Default)]
+pub struct Comment {
+    pub body: String,
+    pub author: String,
+    pub url: String,
+}
+
+#[derive(Clone, Debug, Default)]
 pub struct NotificationDetail {
     pub state: String,
-    pub last_comment: String,
+    pub latest_comment: Option<Comment>,
     pub url: String,
     pub author: String,
 }

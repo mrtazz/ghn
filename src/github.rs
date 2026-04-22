@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 
+use octocrab::models::CommentId;
 use octocrab::models::IssueState;
 use octocrab::Octocrab;
 use tokio;
 
-use crate::notifications::{Notification, NotificationDetail, Repo, Status};
+use crate::notifications::{Comment, Notification, NotificationDetail, Repo, Status};
 
 #[tokio::main]
 pub async fn get_notifications(
@@ -39,6 +40,7 @@ pub async fn get_notifications(
     }
 
     for n in gh_notifications {
+        let subject_url = n.subject.url.unwrap();
         let mut new_n = Notification {
             id: *n.id,
             title: n.subject.title,
@@ -49,10 +51,19 @@ pub async fn get_notifications(
                 owner: n.repository.owner.unwrap().login,
                 name: n.repository.name,
             },
-            latest_comment_url: Some(String::from("")),
+            latest_comment_url: match n.subject.latest_comment_url {
+                None => None,
+                Some(v) => {
+                    if format!("{v}") == format!("{subject_url}") {
+                        None
+                    } else {
+                        Some(String::from(v))
+                    }
+                }
+            },
             updated_at: n.updated_at,
             status: Status::Unread,
-            url: convert_to_html_url(String::from(n.subject.url.unwrap())).unwrap(),
+            url: convert_to_html_url(format!("{subject_url}")).unwrap(),
             details: Err(String::from("Not yet retrieved")),
         };
         match existing_notifications.get(&new_n.id) {
@@ -106,6 +117,7 @@ pub async fn hydrate_notification(
             Ok(v) => {
                 detail.url = String::from(v.html_url);
                 detail.author = v.user.login;
+                detail.latest_comment = get_comment_details(&n, &o).await;
                 match v.state {
                     IssueState::Open => detail.state = String::from("open"),
                     IssueState::Closed => detail.state = String::from("closed"),
@@ -124,8 +136,26 @@ pub async fn hydrate_notification(
                 ));
             }
             Ok(v) => {
-                detail.url = String::from(v.html_url.unwrap());
-                detail.author = v.user.unwrap().login;
+                let author = match v.user {
+                    Some(u) => u.login,
+                    None => format!("nologin"),
+                };
+                let html_url = match v.html_url {
+                    Some(u) => format!("{u}"),
+                    None => format!("no html_url found"),
+                };
+                detail.url = format!("{html_url}");
+                detail.author = format!("{author}");
+                match &n.latest_comment_url {
+                    Some(_) => detail.latest_comment = get_comment_details(&n, &o).await,
+                    None => {
+                        detail.latest_comment = Some(Comment {
+                            author: format!("{author}"),
+                            body: v.body.unwrap_or(format!("No body found for {html_url}")),
+                            url: format!("{html_url}"),
+                        });
+                    }
+                }
                 match v.state {
                     Some(IssueState::Open) => detail.state = String::from("open"),
                     Some(IssueState::Closed) => detail.state = String::from("closed"),
@@ -136,6 +166,29 @@ pub async fn hydrate_notification(
     }
 
     Ok(detail)
+}
+
+async fn get_comment_details(n: &Notification, o: &Octocrab) -> Option<Comment> {
+    if let Some(url) = &n.latest_comment_url {
+        let comment_id = url.split("/").last().unwrap().parse::<u64>().unwrap();
+        let mut ret = Comment::default();
+        match o
+            .issues(&n.repo.owner, &n.repo.name)
+            .get_comment(CommentId(comment_id))
+            .await
+        {
+            Err(e) => {
+                ret.body = format!("failed to retrieve comment from {}\n{e:#?}", url);
+            }
+            Ok(v) => {
+                ret.body = v.body.unwrap_or(format!("no body information"));
+                ret.author = v.user.login;
+                ret.url = String::from(v.html_url);
+            }
+        }
+        return Some(ret);
+    }
+    None
 }
 
 pub fn update_state(notifications: &Vec<Notification>) -> Result<(), String> {
