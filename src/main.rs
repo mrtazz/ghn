@@ -1,6 +1,8 @@
 use color_eyre::Result;
 
 pub mod app;
+pub mod cache;
+pub mod config;
 pub mod github;
 pub mod notifications;
 

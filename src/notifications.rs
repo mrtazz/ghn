@@ -1,20 +1,21 @@
 use chrono::prelude::*;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Status {
     Unread,
     Read,
     Done,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Repo {
     pub owner: String,
     pub name: String,
     pub nwo: String,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Notification {
     pub id: u64,
     pub title: String,
@@ -28,14 +29,14 @@ pub struct Notification {
     pub details: Result<NotificationDetail, String>,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct Comment {
     pub body: String,
     pub author: String,
     pub url: String,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct NotificationDetail {
     pub state: String,
     pub latest_comment: Option<Comment>,

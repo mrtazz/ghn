@@ -11,6 +11,8 @@ use ratatui::widgets::{
 };
 use ratatui::{symbols, DefaultTerminal};
 
+use crate::cache;
+use crate::config;
 use crate::github;
 use crate::notifications::{Notification, Status};
 
@@ -40,7 +42,11 @@ impl Default for App {
         let mut should_show_error = false;
         let mut error_message = String::from("");
 
-        match github::get_notifications(None) {
+        // try and read from cache
+        let cfg = config::Config::default();
+        let cache_data = cache::read(&cfg.cache_file.unwrap()).ok();
+
+        match github::get_notifications(cache_data.as_ref()) {
             Err(e) => {
                 should_show_error = true;
                 error_message = format!("Failed to get initial notifications: {}", e);
@@ -78,6 +84,16 @@ impl App {
         self.message = msg;
     }
 
+    fn write_data_to_cache(&mut self) {
+        let cfg = config::Config::default();
+        match cache::write(&self.notifications_list.items, &cfg.cache_file.unwrap()) {
+            Err(e) => {
+                self.show_message(format!("Failed to sync notificatons state: {}", e));
+            }
+            Ok(_) => {}
+        }
+        self.should_show_message = false;
+    }
     fn sync_state_to_github(&mut self) {
         match github::update_state(&self.notifications_list.items) {
             Err(e) => {
@@ -128,6 +144,7 @@ impl App {
             self.should_show_info = false
         } else {
             self.sync_state_to_github();
+            self.write_data_to_cache();
             self.should_exit = true
         }
     }
