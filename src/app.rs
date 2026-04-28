@@ -15,45 +15,31 @@ use crate::config;
 use crate::github;
 use crate::notifications::{Notification, Status};
 
-trait AppColor {
-    fn background(&self) -> Color;
-    fn border(&self) -> Style;
-    fn done(&self) -> Color;
-    fn foreground(&self) -> Color;
-    fn info(&self) -> Color;
-    fn new(&self) -> Color;
-    fn selected(&self) -> Style;
+struct Theme {
+    pub accent: Color,
+    pub secondary: Color,
+    pub bg: Color,
+    pub fg: Color,
+    pub muted: Color,
+    pub selection: Color,
+    pub error: Color,
+    pub warning: Color,
+    pub success: Color,
+    pub info: Color,
 }
 
-struct Solarized {}
-impl AppColor for Solarized {
-    fn background(&self) -> Color {
-        Color::Rgb(253, 246, 227)
-    }
-    fn foreground(&self) -> Color {
-        Color::Rgb(101, 123, 131)
-    }
-    fn selected(&self) -> Style {
-        Style::new()
-            .bg(Color::Rgb(181, 137, 0))
-            .fg(Color::Rgb(238, 232, 213))
-            .add_modifier(Modifier::BOLD)
-    }
-    fn border(&self) -> Style {
-        Style::new()
-            .fg(Color::Rgb(38, 139, 210))
-            .bg(Color::Rgb(253, 246, 227))
-    }
-    fn done(&self) -> Color {
-        Color::Rgb(220, 50, 47)
-    }
-    fn new(&self) -> Color {
-        Color::Rgb(42, 161, 152)
-    }
-    fn info(&self) -> Color {
-        Color::Rgb(38, 139, 210)
-    }
-}
+const SOLARIZED_LIGHT: Theme = Theme {
+    accent: Color::Rgb(38, 139, 210),     // Blue
+    secondary: Color::Rgb(108, 113, 196), // Violet
+    bg: Color::Rgb(253, 246, 227),        // base3
+    fg: Color::Rgb(101, 123, 131),        // base00
+    muted: Color::Rgb(147, 161, 161),     // base1
+    selection: Color::Rgb(238, 232, 213), // base2
+    error: Color::Rgb(220, 50, 47),       // red
+    warning: Color::Rgb(181, 137, 0),     // yellow
+    success: Color::Rgb(133, 153, 0),     // green
+    info: Color::Rgb(42, 161, 152),       // cyan
+};
 
 pub struct App {
     should_exit: bool,
@@ -61,7 +47,7 @@ pub struct App {
     should_show_message: bool,
     message: String,
     notifications_list: NotificationList,
-    color: Box<dyn AppColor>,
+    theme: Theme,
 }
 
 struct NotificationList {
@@ -97,7 +83,7 @@ impl Default for App {
                 items: items,
                 state: TableState::default(),
             },
-            color: Box::new(Solarized {}),
+            theme: SOLARIZED_LIGHT,
         }
     }
 }
@@ -252,12 +238,12 @@ impl App {
         if self.should_show_message {
             Paragraph::new(self.message.to_string())
                 .centered()
-                .fg(self.color.done())
+                .fg(self.theme.error)
                 .render(area, buf);
         } else {
             Paragraph::new(text)
                 .centered()
-                .fg(self.color.info())
+                .fg(self.theme.accent)
                 .render(area, buf);
         }
     }
@@ -268,8 +254,8 @@ impl App {
             .title(Line::raw(format!("Notifications ({})", count)).centered())
             .borders(Borders::TOP)
             .border_set(symbols::border::EMPTY)
-            .border_style(self.color.border())
-            .bg(self.color.background());
+            .border_style(Style::new().fg(self.theme.accent).bg(self.theme.bg))
+            .bg(self.theme.bg);
 
         // Iterate through all elements in the `items` and stylize them.
         let items: Vec<Row> = self
@@ -279,11 +265,11 @@ impl App {
             .enumerate()
             .map(|(_, notification)| match notification.status {
                 Status::Done => Row::from(notification)
-                    .style(self.color.foreground())
-                    .bg(self.color.done()),
+                    .style(self.theme.fg)
+                    .bg(self.theme.bg),
                 _ => Row::from(notification)
-                    .style(self.color.new())
-                    .bg(self.color.background()),
+                    .style(self.theme.info)
+                    .bg(self.theme.bg),
             })
             .collect();
 
@@ -299,7 +285,12 @@ impl App {
 
         let table = Table::new(items, widths)
             .block(block)
-            .row_highlight_style(self.color.selected())
+            .row_highlight_style(
+                Style::new()
+                    .bg(self.theme.warning)
+                    .fg(self.theme.selection)
+                    .add_modifier(Modifier::BOLD),
+            )
             .highlight_symbol(">>")
             .highlight_spacing(HighlightSpacing::Always);
 
@@ -336,14 +327,14 @@ impl App {
             .title(Line::raw("Notification Info").centered())
             .borders(Borders::TOP)
             .border_set(symbols::border::EMPTY)
-            .border_style(self.color.border())
-            .bg(self.color.background())
+            .border_style(Style::new().fg(self.theme.fg).bg(self.theme.bg))
+            .bg(self.theme.bg)
             .padding(Padding::horizontal(1));
 
         // We can now render the item info
         Paragraph::new(info)
             .block(block)
-            .fg(self.color.foreground())
+            .fg(self.theme.fg)
             .wrap(Wrap { trim: false })
             .render(area, buf);
     }
