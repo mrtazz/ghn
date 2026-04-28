@@ -2,7 +2,6 @@ use color_eyre::Result;
 use crossterm::event::{self, KeyCode, KeyEvent};
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::palette::tailwind::{BLUE, GREEN, RED, SLATE};
 use ratatui::style::{Color, Modifier, Style, Stylize};
 use ratatui::text::Line;
 use ratatui::widgets::{
@@ -16,12 +15,45 @@ use crate::config;
 use crate::github;
 use crate::notifications::{Notification, Status};
 
-const TODO_HEADER_STYLE: Style = Style::new().fg(SLATE.c100).bg(BLUE.c800);
-const NORMAL_ROW_BG: Color = SLATE.c950;
-const ALT_ROW_BG_COLOR: Color = SLATE.c900;
-const SELECTED_STYLE: Style = Style::new().bg(SLATE.c800).add_modifier(Modifier::BOLD);
-const TEXT_FG_COLOR: Color = SLATE.c200;
-const DONE_TEXT_BG_COLOR: Color = RED.c800;
+trait AppColor {
+    fn background(&self) -> Color;
+    fn border(&self) -> Style;
+    fn done(&self) -> Color;
+    fn foreground(&self) -> Color;
+    fn info(&self) -> Color;
+    fn new(&self) -> Color;
+    fn selected(&self) -> Style;
+}
+
+struct Solarized {}
+impl AppColor for Solarized {
+    fn background(&self) -> Color {
+        Color::Rgb(253, 246, 227)
+    }
+    fn foreground(&self) -> Color {
+        Color::Rgb(101, 123, 131)
+    }
+    fn selected(&self) -> Style {
+        Style::new()
+            .bg(Color::Rgb(181, 137, 0))
+            .fg(Color::Rgb(238, 232, 213))
+            .add_modifier(Modifier::BOLD)
+    }
+    fn border(&self) -> Style {
+        Style::new()
+            .fg(Color::Rgb(38, 139, 210))
+            .bg(Color::Rgb(253, 246, 227))
+    }
+    fn done(&self) -> Color {
+        Color::Rgb(220, 50, 47)
+    }
+    fn new(&self) -> Color {
+        Color::Rgb(42, 161, 152)
+    }
+    fn info(&self) -> Color {
+        Color::Rgb(38, 139, 210)
+    }
+}
 
 pub struct App {
     should_exit: bool,
@@ -29,6 +61,7 @@ pub struct App {
     should_show_message: bool,
     message: String,
     notifications_list: NotificationList,
+    color: Box<dyn AppColor>,
 }
 
 struct NotificationList {
@@ -64,6 +97,7 @@ impl Default for App {
                 items: items,
                 state: TableState::default(),
             },
+            color: Box::new(Solarized {}),
         }
     }
 }
@@ -218,9 +252,13 @@ impl App {
         if self.should_show_message {
             Paragraph::new(self.message.to_string())
                 .centered()
+                .fg(self.color.done())
                 .render(area, buf);
         } else {
-            Paragraph::new(text).centered().render(area, buf);
+            Paragraph::new(text)
+                .centered()
+                .fg(self.color.info())
+                .render(area, buf);
         }
     }
 
@@ -230,8 +268,8 @@ impl App {
             .title(Line::raw(format!("Notifications ({})", count)).centered())
             .borders(Borders::TOP)
             .border_set(symbols::border::EMPTY)
-            .border_style(TODO_HEADER_STYLE)
-            .bg(NORMAL_ROW_BG);
+            .border_style(self.color.border())
+            .bg(self.color.background());
 
         // Iterate through all elements in the `items` and stylize them.
         let items: Vec<Row> = self
@@ -239,9 +277,13 @@ impl App {
             .items
             .iter()
             .enumerate()
-            .map(|(i, notification)| {
-                let color = alternate_colors(i, notification.status);
-                Row::from(notification).bg(color)
+            .map(|(_, notification)| match notification.status {
+                Status::Done => Row::from(notification)
+                    .style(self.color.foreground())
+                    .bg(self.color.done()),
+                _ => Row::from(notification)
+                    .style(self.color.new())
+                    .bg(self.color.background()),
             })
             .collect();
 
@@ -257,7 +299,7 @@ impl App {
 
         let table = Table::new(items, widths)
             .block(block)
-            .row_highlight_style(SELECTED_STYLE)
+            .row_highlight_style(self.color.selected())
             .highlight_symbol(">>")
             .highlight_spacing(HighlightSpacing::Always);
 
@@ -280,8 +322,8 @@ impl App {
                 Ok(v) => {
                     let comment = v.latest_comment.clone().unwrap_or_default();
                     format!(
-                        "URL: {}\nauthor: {}\n\n{}:\n\n{}\n\n{}",
-                        v.url, v.author, comment.author, comment.body, comment.url,
+                        "URL: {}\nauthor: {}\n\n{} ({}):\n\n{}",
+                        v.url, v.author, comment.author, comment.url, comment.body,
                     )
                 }
             }
@@ -294,14 +336,14 @@ impl App {
             .title(Line::raw("Notification Info").centered())
             .borders(Borders::TOP)
             .border_set(symbols::border::EMPTY)
-            .border_style(TODO_HEADER_STYLE)
-            .bg(NORMAL_ROW_BG)
+            .border_style(self.color.border())
+            .bg(self.color.background())
             .padding(Padding::horizontal(1));
 
         // We can now render the item info
         Paragraph::new(info)
             .block(block)
-            .fg(TEXT_FG_COLOR)
+            .fg(self.color.foreground())
             .wrap(Wrap { trim: false })
             .render(area, buf);
     }
@@ -327,19 +369,5 @@ impl<'a> From<&Notification> for Row<'a> {
             format!("{}", value.repo.nwo),
             format!("{}", value.title),
         ])
-        .style(TEXT_FG_COLOR)
-    }
-}
-
-const fn alternate_colors(i: usize, s: Status) -> Color {
-    match s {
-        Status::Done => DONE_TEXT_BG_COLOR,
-        _ => {
-            if i.is_multiple_of(2) {
-                NORMAL_ROW_BG
-            } else {
-                ALT_ROW_BG_COLOR
-            }
-        }
     }
 }
