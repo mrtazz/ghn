@@ -254,8 +254,7 @@ impl App {
             .title(Line::raw(format!("Notifications ({})", count)).centered())
             .borders(Borders::TOP)
             .border_set(symbols::border::EMPTY)
-            .border_style(Style::new().fg(self.theme.accent).bg(self.theme.bg))
-            .bg(self.theme.bg);
+            .border_style(Style::new().fg(self.theme.accent));
 
         // Iterate through all elements in the `items` and stylize them.
         let items: Vec<Row> = self
@@ -264,12 +263,8 @@ impl App {
             .iter()
             .enumerate()
             .map(|(_, notification)| match notification.status {
-                Status::Done => Row::from(notification)
-                    .style(self.theme.fg)
-                    .bg(self.theme.bg),
-                _ => Row::from(notification)
-                    .style(self.theme.info)
-                    .bg(self.theme.bg),
+                Status::Done => Row::from(notification).style(self.theme.error),
+                _ => Row::from(notification).style(self.theme.info),
             })
             .collect();
 
@@ -327,8 +322,7 @@ impl App {
             .title(Line::raw("Notification Info").centered())
             .borders(Borders::TOP)
             .border_set(symbols::border::EMPTY)
-            .border_style(Style::new().fg(self.theme.fg).bg(self.theme.bg))
-            .bg(self.theme.bg)
+            .border_style(Style::new().fg(self.theme.fg))
             .padding(Padding::horizontal(1));
 
         // We can now render the item info
