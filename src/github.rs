@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use octocrab::models::activity;
 use octocrab::models::CommentId;
 use octocrab::models::IssueState;
 use octocrab::Octocrab;
@@ -39,47 +40,41 @@ pub async fn get_notifications(
         existing_notifications.insert(n.id, n.clone());
     }
 
+    let mut handles = Vec::new();
+
     for n in gh_notifications {
-        let subject_url = n.subject.url.unwrap();
-        let mut new_n = Notification {
-            id: *n.id,
-            title: n.subject.title,
-            github_type: n.subject.r#type,
-            reason: n.reason,
-            repo: Repo {
-                nwo: n.repository.full_name.unwrap_or(String::from("no-name")),
-                owner: n.repository.owner.unwrap().login,
-                name: n.repository.name,
-            },
-            latest_comment_url: match n.subject.latest_comment_url {
-                None => None,
-                Some(v) => {
-                    if format!("{v}") == format!("{subject_url}") {
-                        None
-                    } else {
-                        Some(String::from(v))
-                    }
-                }
-            },
-            updated_at: n.updated_at,
-            status: Status::Unread,
-            url: convert_to_html_url(format!("{subject_url}")).unwrap(),
-            details: Err(String::from("Not yet retrieved")),
-        };
-        match existing_notifications.get(&new_n.id) {
-            None => {
-                new_n.details = hydrate_notification(&new_n, &octocrab).await;
-            }
+        let n = n.clone();
+        let o = octocrab.clone();
+        let mut new_n = Notification::from(&n);
+        let details: Option<NotificationDetail> = match existing_notifications.get(&n.id) {
+            None => None,
             Some(n) => {
                 if new_n.updated_at > n.updated_at {
-                    new_n.details = hydrate_notification(&new_n, &octocrab).await;
+                    None
                 } else {
-                    new_n.details = n.details.clone();
+                    Some(n.details.clone().unwrap())
                 }
             }
+        };
+
+        match details {
+            Some(d) => {
+                new_n.details = Ok(d);
+                notifications.push(new_n);
+            }
+            None => {
+                handles.push(tokio::spawn(async move {
+                    new_n.details = hydrate_notification(&new_n, &o).await;
+                    new_n
+                }));
+            }
         }
+    }
+    for handle in handles {
+        let new_n = handle.await.unwrap();
         notifications.push(new_n);
     }
+
     notifications.sort_by_key(|x| x.updated_at);
     Ok(notifications)
 }
@@ -94,8 +89,44 @@ fn convert_to_html_url(url: String) -> Result<String, String> {
 
     return Ok(ret);
 }
+impl From<&activity::Notification> for Notification {
+    fn from(n: &activity::Notification) -> Self {
+        let subject_url = format!("{}", n.subject.url.as_ref().unwrap());
+        return Notification {
+            id: *n.id,
+            title: format!("{}", n.subject.title),
+            github_type: format!("{}", n.subject.r#type),
+            reason: format!("{}", n.reason),
+            repo: Repo {
+                nwo: format!(
+                    "{}",
+                    n.repository
+                        .full_name
+                        .as_ref()
+                        .unwrap_or(&String::from("no-name"))
+                ),
+                owner: format!("{}", n.repository.owner.as_ref().unwrap().login),
+                name: format!("{}", n.repository.name),
+            },
+            latest_comment_url: match n.subject.latest_comment_url.as_ref() {
+                None => None,
+                Some(v) => {
+                    if format!("{v}") == format!("{subject_url}") {
+                        None
+                    } else {
+                        Some(format!("{v}"))
+                    }
+                }
+            },
+            updated_at: n.updated_at,
+            status: Status::Unread,
+            url: convert_to_html_url(format!("{subject_url}")).unwrap(),
+            details: Err(String::from("Not yet retrieved")),
+        };
+    }
+}
 
-pub async fn hydrate_notification(
+async fn hydrate_notification(
     n: &Notification,
     o: &Octocrab,
 ) -> Result<NotificationDetail, String> {
@@ -191,11 +222,25 @@ async fn get_comment_details(n: &Notification, o: &Octocrab) -> Option<Comment> 
     None
 }
 
-pub fn update_state(notifications: &Vec<Notification>) -> Result<(), String> {
-    return notifications.iter().map(update_thread_state).collect();
+#[tokio::main]
+pub async fn update_state(notifications: &Vec<Notification>) -> Result<(), String> {
+    let mut handles = Vec::new();
+    let mut ret: Result<(), String> = Ok(());
+
+    for n in notifications {
+        let n = n.clone();
+        handles.push(tokio::spawn(async move { update_thread_state(&n).await }));
+    }
+
+    for handle in handles {
+        if let Err(e) = handle.await.unwrap() {
+            ret = Err(format!("unable to update thread: {e}"));
+        }
+    }
+
+    return ret;
 }
 
-#[tokio::main]
 async fn update_thread_state(n: &Notification) -> Result<(), String> {
     match n.status {
         Status::Read => {
