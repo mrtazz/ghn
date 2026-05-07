@@ -55,6 +55,31 @@ struct NotificationList {
     state: TableState,
 }
 
+struct IndexWidths {
+    pub status: Constraint,
+    pub datetime: Constraint,
+    pub author: Constraint,
+    pub repo: Constraint,
+    pub title: Constraint,
+    pub github_type: Constraint,
+    pub state: Constraint,
+    pub reason: Constraint,
+}
+impl Default for IndexWidths {
+    fn default() -> Self {
+        Self {
+            status: Constraint::Length(2),
+            datetime: Constraint::Length(18),
+            author: Constraint::Length(20),
+            repo: Constraint::Length(20),
+            title: Constraint::Length(100),
+            github_type: Constraint::Length(15),
+            state: Constraint::Length(8),
+            reason: Constraint::Length(15),
+        }
+    }
+}
+
 impl Default for App {
     fn default() -> Self {
         let mut items: Vec<Notification> = vec![];
@@ -268,14 +293,16 @@ impl App {
             })
             .collect();
 
+        let default_widths = IndexWidths::default();
+
         let widths = [
-            Constraint::Length(2),
-            Constraint::Length(20),
-            Constraint::Length(10),
-            Constraint::Length(15),
-            Constraint::Length(20),
-            Constraint::Length(20),
-            Constraint::Length(100),
+            default_widths.status,
+            default_widths.datetime,
+            default_widths.repo,
+            default_widths.github_type,
+            default_widths.author,
+            default_widths.title,
+            default_widths.reason,
         ];
 
         let table = Table::new(items, widths)
@@ -344,15 +371,26 @@ impl<'a> From<&Notification> for Row<'a> {
 
         Row::new(vec![
             format!("{}", status_marker),
-            format!("{}", value.updated_at.format("%Y-%m-%d %H:%M:%S")),
+            format!("{}", value.updated_at.format("%Y-%m-%d %H:%M")),
+            format!("{}", value.repo.nwo),
+            format!(
+                "{} ({})",
+                value.github_type,
+                match value.details.clone().unwrap_or_default().state.as_str() {
+                    "closed" => format!("C"),
+                    "open" => format!("O"),
+                    _ => format!(""),
+                }
+            ),
             match &value.details {
                 Err(_) => format!("n/a"),
-                Ok(v) => format!("{}", v.state),
+                Ok(v) => match v.latest_comment.clone() {
+                    Some(comment) => format!("{}", comment.author),
+                    None => format!("{}", v.author),
+                },
             },
-            format!("{}", value.github_type),
-            format!("{}", value.reason),
-            format!("{}", value.repo.nwo),
             format!("{}", value.title),
+            format!("{}", value.reason),
         ])
     }
 }
