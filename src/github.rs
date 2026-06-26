@@ -91,7 +91,10 @@ fn convert_to_html_url(url: String) -> Result<String, String> {
 }
 impl From<&activity::Notification> for Notification {
     fn from(n: &activity::Notification) -> Self {
-        let subject_url = format!("{}", n.subject.url.as_ref().unwrap());
+        let subject_url = match n.subject.url.as_ref() {
+            Some(v) => format!("{}", v),
+            None => String::from(""),
+        };
         return Notification {
             id: *n.id,
             title: format!("{}", n.subject.title),
