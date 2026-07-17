@@ -221,6 +221,8 @@ impl App {
         for n in self.notifications_list.items.iter_mut() {
             if n.title.contains(&match_string) {
                 n.status = Status::Done;
+            } else if n.repo.nwo.contains(&match_string) {
+                n.status = Status::Done;
             }
         }
         Ok(())
