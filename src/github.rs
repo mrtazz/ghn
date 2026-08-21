@@ -52,7 +52,10 @@ pub async fn get_notifications(
                 if new_n.updated_at > n.updated_at {
                     None
                 } else {
-                    Some(n.details.clone().unwrap())
+                    match n.details.clone() {
+                        Ok(d) => Some(d),
+                        _ => None,
+                    }
                 }
             }
         };

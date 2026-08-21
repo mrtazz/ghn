@@ -388,24 +388,37 @@ impl App {
     }
 
     fn render_list(&mut self, area: Rect, buf: &mut Buffer) {
-        let count = self.notifications_list.items.len();
-        let block = Block::new()
-            .title(Line::raw(format!("Notifications ({})", count)).centered())
-            .borders(Borders::TOP)
-            .border_set(symbols::border::EMPTY)
-            .border_style(Style::new().fg(self.theme.accent));
-
+        let mut done_items_count: usize = 0;
+        let mut all_items_count: usize = 0;
         // Iterate through all elements in the `items` and stylize them.
         let items: Vec<Row> = self
             .notifications_list
             .items
             .iter()
             .enumerate()
-            .map(|(_, notification)| match notification.status {
-                Status::Done => Row::from(notification).style(self.theme.error),
-                _ => Row::from(notification).style(self.theme.info),
+            .map(|(_, notification)| {
+                all_items_count += 1;
+                match notification.status {
+                    Status::Done => {
+                        done_items_count += 1;
+                        Row::from(notification).style(self.theme.error)
+                    }
+                    _ => Row::from(notification).style(self.theme.info),
+                }
             })
             .collect();
+
+        let block = Block::new()
+            .title(
+                Line::raw(format!(
+                    "Notifications ({}/{})",
+                    done_items_count, all_items_count
+                ))
+                .centered(),
+            )
+            .borders(Borders::TOP)
+            .border_set(symbols::border::EMPTY)
+            .border_style(Style::new().fg(self.theme.accent));
 
         let default_widths = IndexWidths::default();
 
