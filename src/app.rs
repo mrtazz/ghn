@@ -382,9 +382,12 @@ impl App {
     }
 
     fn render_input(&self, area: Rect, buf: &mut Buffer) {
-        Paragraph::new(format!("Match to mark as done: {}", self.input.as_str()))
-            .style(Style::default().fg(Color::Yellow))
-            .render(area, buf);
+        Paragraph::new(format!(
+            "Match to mark as done (Esc to cancel): {}",
+            self.input.as_str()
+        ))
+        .style(Style::default().fg(Color::Yellow))
+        .render(area, buf);
     }
 
     fn render_list(&mut self, area: Rect, buf: &mut Buffer) {
