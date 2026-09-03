@@ -9,11 +9,14 @@ use ratatui::widgets::{
     Widget, Wrap,
 };
 use ratatui::{symbols, DefaultTerminal};
+use webbrowser;
 
 use crate::cache;
 use crate::config;
 use crate::github;
 use crate::notifications::{Notification, Status};
+
+const HELP_TEXT: &str = "Use j/k to move, g/G to go top/bottom, d to mark done, D to mark done by substring match, N to mark unread, O to open thread in browser, $ to sync state";
 
 struct Theme {
     pub accent: Color,
@@ -188,6 +191,9 @@ impl App {
                 self.change_status(Status::Done);
                 self.select_next();
             }
+            KeyCode::Char('O') => {
+                self.open_link();
+            }
             KeyCode::Char('D') => self.input_mode = InputMode::Insert,
             KeyCode::Enter => self.show_info(),
             _ => {}
@@ -326,6 +332,23 @@ impl App {
             self.notifications_list.items[i].status = status;
         }
     }
+    fn open_link(&mut self) {
+        if let Some(i) = self.notifications_list.state.selected() {
+            let n = self.notifications_list.items[i].clone();
+            match n.latest_comment_url {
+                Some(comment_url) => {
+                    if !webbrowser::open(comment_url.as_str()).is_ok() {
+                        self.show_message(format!("Unable to open comment URL"));
+                    }
+                }
+                None => {
+                    if !webbrowser::open(n.url.as_str()).is_ok() {
+                        self.show_message(format!("Unable to notification URL"));
+                    }
+                }
+            }
+        }
+    }
 }
 
 impl Widget for &mut App {
@@ -367,14 +390,13 @@ impl App {
     }
 
     fn render_footer(&self, area: Rect, buf: &mut Buffer) {
-        let text = "Use j/k to move, g/G to go top/bottom, d to mark done, D to mark done by substring match, N to mark unread, $ to sync state";
         if self.should_show_message {
             Paragraph::new(self.message.to_string())
                 .centered()
                 .fg(self.theme.error)
                 .render(area, buf);
         } else {
-            Paragraph::new(text)
+            Paragraph::new(HELP_TEXT)
                 .centered()
                 .fg(self.theme.accent)
                 .render(area, buf);
